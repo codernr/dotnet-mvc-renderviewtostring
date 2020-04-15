@@ -7,8 +7,6 @@ using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Internal;
-using Microsoft.AspNetCore.Mvc.Razor;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.ObjectPool;
@@ -59,34 +57,52 @@ namespace Mvc.RenderViewToString
         private static void ConfigureDefaultServices(IServiceCollection services, string customApplicationBasePath)
         {
             string applicationName;
-            IFileProvider fileProvider;
+            string rootPath;
+
             if (!string.IsNullOrEmpty(customApplicationBasePath))
             {
                 applicationName = Path.GetFileName(customApplicationBasePath);
-                fileProvider = new PhysicalFileProvider(customApplicationBasePath);
+                rootPath = customApplicationBasePath;
             }
             else
             {
                 applicationName = Assembly.GetEntryAssembly().GetName().Name;
-                fileProvider = new PhysicalFileProvider(Directory.GetCurrentDirectory());
+                rootPath = Directory.GetCurrentDirectory();
             }
 
-            services.AddSingleton<IHostingEnvironment>(new HostingEnvironment
+            var fileProvider = new PhysicalFileProvider(rootPath);
+
+            var environment = new CustomHostingEnvironment
             {
-                ApplicationName =  applicationName,
                 WebRootFileProvider = fileProvider,
-            });
-            services.Configure<RazorViewEngineOptions>(options =>
-            {
-                options.FileProviders.Clear();
-                options.FileProviders.Add(fileProvider);
-            });
+                ApplicationName = applicationName,
+                ContentRootPath = rootPath,
+                WebRootPath = rootPath,
+                EnvironmentName = "DEVELOPMENT",
+                ContentRootFileProvider = fileProvider
+            };
+
+            services.AddSingleton<IWebHostEnvironment>(environment);
+
             var diagnosticSource = new DiagnosticListener("Microsoft.AspNetCore");
             services.AddSingleton<ObjectPoolProvider, DefaultObjectPoolProvider>();
             services.AddSingleton<DiagnosticSource>(diagnosticSource);
+            services.AddSingleton<DiagnosticListener>(diagnosticSource);
             services.AddLogging();
-            services.AddMvc();
+            services.AddMvcCore()
+                .AddRazorViewEngine();
             services.AddTransient<RazorViewToStringRenderer>();
         }
+    }
+
+    public class CustomHostingEnvironment : IWebHostEnvironment
+    {
+        public string EnvironmentName { get; set; }
+        public string ApplicationName { get; set; }
+        public string WebRootPath { get; set; }
+        public IFileProvider WebRootFileProvider { get; set; }
+        public string ContentRootPath { get; set; }
+
+        public IFileProvider ContentRootFileProvider { get; set; }
     }
 }
